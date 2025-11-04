@@ -1,0 +1,72 @@
+how i2c works with the adafruit neotrellis 3954 board
+
+goal:
+talk to the neotrellis (i2c address 0x2e) to:
+1. initialize it (reset and configure)
+2. read button press and release events
+3. optionally control the leds
+
+1. initialize i2c bus
+begin setup
+    select i2c peripheral 
+    choose sda pin and scl pin
+    configure both pins for i2c function
+    enable internal pull up resistors
+    set i2c clock speed - 400 khz???
+end setup
+
+this creates the communication channel between the microcontroller (master) and the neotrellis (slave)
+
+2. reset the neotrellis
+wait a few milliseconds
+
+3. configure the keypad matrix
+this tells the board it has a 4x4 keypad layout
+
+4. interuppts??? we need to figure out if its with gpio or with i2c
+with i2c:
+loop forever:
+    ask "event count" over i2c
+    if count > 0:
+        read that many events
+    wait 5–10 ms
+end loop
+
+with gpio:
+when int pin goes low:
+    ask "event count" over i2c
+    read that many events
+
+
+5. pending events
+loop forever:
+    send: [0x10, 0x04]  (ask for event count)
+    read 1 byte into variable "count"
+
+    if count > 0 then
+        repeat count times:
+            send: [0x10, 0x01]  (ask for next event)
+            read 2 bytes into (key_id, key_status)
+
+            key_index = key_id
+            pressed = (key_status bit0 == 1)
+            released = (key_status bit1 == 1)
+
+            row = key_index / 4
+            col = key_index % 4
+
+            if pressed:
+                print "key (row,col) pressed"
+            else:
+                print "key (row,col) released"
+        end repeat
+    end if
+
+    wait a short delay (about 5 to 10 ms)
+end loop
+
+
+6. control leds? last - but could be written into the interuppt handling process
+each led uses 3 bytes (rgb) so 16 keys * 3 = 48 bytes total
+writing updates the color buffer, and the show command displays them
+

@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "stdlib.h": "c",
+        "spi.h": "c",
+        "lcd.h": "c",
+        "string.h": "c"
+    }
+}

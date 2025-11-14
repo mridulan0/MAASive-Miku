@@ -23,8 +23,10 @@ Picture* load_image(const uint8_t* raw_data) {
     if (!pic_mut) return NULL;
 
     // Read width and height from the first 8 bytes of the array.
-    pic_mut->width  = 240;
-    pic_mut->height = 320;
+    pic_mut->width  = *(const uint32_t*)&raw_data[0];
+    pic_mut->height = *(const uint32_t*)&raw_data[4];
+    int wid = pic_mut->width;
+    int hgt = pic_mut->height;
     pic_mut->bytes_per_pixel = 2; // 2 bytes = 16-bit pixel
 
     // The pixel data starts right after the 8-byte header

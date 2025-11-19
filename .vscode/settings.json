@@ -3,6 +3,11 @@
         "stdlib.h": "c",
         "spi.h": "c",
         "lcd.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "pwm.h": "c",
+        "irq.h": "c",
+        "stdio.h": "c",
+        "math.h": "c",
+        "type_traits": "c"
     }
 }

@@ -4,6 +4,7 @@
 #include <math.h>
 #include <string.h>
 #include "hardware/i2c.h"
+#include <stdint.h>
 
 #define I2C_SDA 4
 #define I2C_SCL 5
@@ -49,7 +50,7 @@
 
 void init_i2c() {
     // Init I2C0 at 400 kHz (Fast Mode)
-    i2c_init(i2c0, 400 * 1000);
+    i2c_init(i2c0, 400000);
 
     // Assign the I2C function to SDA/SCL pins
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
@@ -68,7 +69,7 @@ static int seesaw_write(uint8_t module, uint8_t function, const uint8_t *payload
     buf[0] = module;
     buf[1] = function;
     for (uint8_t i = 0; i < len; i++) {
-        buf[2 + i] = payload[i];
+        buf[2 + i] = payload ? payload[i] : 0;
     }
 
     int ret = i2c_write_blocking(i2c0, NEOTRELLIS_ADDR, buf, 2 + len, false);
@@ -122,5 +123,98 @@ void neotrellis_init(void) {
     if (seesaw_read(SEESAW_STATUS_BASE, SEESAW_STATUS_HW_ID, buf, 1) > 0) {
         printf("Seesaw HW_ID (after init): 0x%02X\r\n", buf[0]);
     }
+}
+
+//neopixel helper funcs with simple bpm based pattern
+
+// sets a single pixel's color in the seesaw buffer (does NOT light it yet)
+void neotrellis_set_pixel(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) {
+    if (pixel >= NEOTRELLIS_NUM_PIXELS) return;
+
+    uint8_t buf[2 + 3];
+    uint16_t start = pixel * 3;  // byte offset in NeoPixel buffer
+
+    buf[0] = (uint8_t)(start & 0xFF);        // start index LSB
+    buf[1] = (uint8_t)((start >> 8) & 0xFF); // start index MSB
+
+    // RGB order – if colors look weird, try GRB (g,r,b) instead
+    buf[2] = r;
+    buf[3] = g;
+    buf[4] = b;
+
+    seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIX_BUF, buf, sizeof(buf));
+}
+
+// tells the seesaw to push its buffer out to the actual LEDs
+void neotrellis_show(void) {
+    seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIX_SHOW, NULL, 0);
+}
+
+// for now: fixed BPM; later this will use ADC to adjust tempo
+float get_current_bpm(void) {
+    // start with something easy like 120 BPM
+    return 120.0f;
+}
+
+// very simple test pattern:
+// on each "beat", either:
+//   - turn all LEDs blue
+//   - or turn all LEDs off
+// so you get a blinking grid in time with the BPM.
+void simple_beat_pattern_step(uint8_t step) {
+    uint8_t on = step & 1;  // alternate 0,1,0,1,...
+
+    for (uint8_t i = 0; i < NEOTRELLIS_NUM_PIXELS; i++) {
+        if (on) {
+            // blue-ish color (0, 0, 150)
+            neotrellis_set_pixel(i, 0, 0, 150);
+        } else {
+            // off
+            neotrellis_set_pixel(i, 0, 0, 0);
+        }
+    }
+
+    neotrellis_show();
+}
+
+int main() {
+    stdio_init_all();
+    sleep_ms(500);   // let USB serial come up
+
+    init_i2c();
+    neotrellis_init();
+
+    printf("NeoTrellis BPM blink test starting...\r\n");
+
+    uint8_t step = 0;
+
+    // compute initial BPM and beat interval
+    float bpm = get_current_bpm();
+    if (bpm < 1.0f) bpm = 1.0f;
+    uint32_t beat_interval_ms = (uint32_t)(60000.0f / bpm);
+
+    uint32_t last_beat_ms = to_ms_since_boot(get_absolute_time());
+
+    while (1) {
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+
+        // check if it's time for the next beat
+        if (now_ms - last_beat_ms >= beat_interval_ms) {
+            last_beat_ms += beat_interval_ms;  // schedule next beat
+
+            // advance our simple pattern
+            simple_beat_pattern_step(step);
+            step++;
+
+            // optionally update BPM each beat (will matter later when ADC is hooked up)
+            bpm = get_current_bpm();
+            if (bpm < 1.0f) bpm = 1.0f;
+            beat_interval_ms = (uint32_t)(60000.0f / bpm);
+        }
+
+        tight_loop_contents();
+    }
+
+    return 0;
 }
 

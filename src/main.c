@@ -9,22 +9,13 @@
 #include "hardware/pwm.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
+#include "images.h"
 #include "combo.h"
 /****************************************** */
-// Uncomment the following #define when 
-// you are ready to run Step 3.
-
-// WARNING: The process will take a VERY 
-// long time as it compiles and uploads 
-// all the image frames into the uploaded 
-// binary!  Expect to wait 5 minutes.
-#define ANIMATION
-
+// Comment out this line once the keypad is implemented
+#define PLAY
 /****************************************** */
-#ifdef ANIMATION
-#include "images.h"
-#endif
-/****************************************** */
+
 int determine_gpio_from_channel(int);
 void init_adc(int);
 void init_adc_for_freerun();
@@ -34,6 +25,7 @@ void init_spi_lcd();
 Picture* load_image(const uint8_t* image_data);
 void free_image(Picture* pic);
 bool input = false;
+#ifdef PLAY
 static void _play_handler(){
     if (gpio_get_irq_event_mask(21) == GPIO_IRQ_EDGE_RISE) {
             input = true;
@@ -47,6 +39,7 @@ static void _init_play(){
     gpio_set_irq_enabled(21, GPIO_IRQ_EDGE_RISE, true);
     
 }
+#endif
 
 
 int main() {
@@ -75,7 +68,6 @@ int main() {
     LCD_Setup();
     LCD_Clear(0xC71D); // Clear the screen to black
 
-    #ifdef ANIMATION
     Picture* frame_pic = NULL;
     int frame_index = 0;
     int combo = 0;
@@ -84,7 +76,9 @@ int main() {
     bool chg = false;
     int ten = combo/10;
     int one = combo%10;
-    _init_play();
+    #ifdef PLAY
+        _init_play();
+    #endif
     while (1) { // Loop forever
         // Get the next frame from the array
         frame_pic = load_image(mystery_frames[frame_index]);
@@ -124,7 +118,6 @@ int main() {
         // Add a small delay to control animation speed
         sleep_us(40); // Adjust delay as needed
     }
-    #endif
 
     for(;;);
 }

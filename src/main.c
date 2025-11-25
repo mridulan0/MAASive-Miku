@@ -1,83 +1,68 @@
+#include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
-// #include "pico/ff_stdio.h"
+#include "hardware/dma.h"
+#include "hardware/structs/dma.h"
+#include "hardware/structs/pwm.h"
+#include "ievan_polkka_96.h"
 
-#define GPIO 28
+extern uint16_t pwm_buffer[2][1024];
+extern int current_buffer;
+extern bool buffer_ready[2];
+extern bool playback_active;
+extern int dma_chan;
 
-#define C 262
-#define Csharp 277
-#define D 294
-#define E 330
-#define F 349
-#define Fsharp 370
-#define G 392
-#define Gsharp 415
-#define A 440
-#define B 494
-#define C2 523
-#define C2sharp 554
-
-//////////////////////////////////////////////////////////////////////////////
-
-void play_tone(uint gpio, int freq, int duration_ms) {
-    uint slice_num = pwm_gpio_to_slice_num(gpio);
-    uint channel = pwm_gpio_to_channel(gpio);
-
-    // calculate clkdiv to keep wrap <= 65535 = 2^16
-    float clkdiv = (float)125000000 / (freq * 65535.0);
-    if (clkdiv < 1.0f) clkdiv = 1.0f; // 1 is the minimum allowed
-
-    pwm_set_clkdiv(slice_num, clkdiv);
-    pwm_set_wrap(slice_num, 65535);
-    pwm_set_chan_level(slice_num, channel, 32768); // 50% duty
-
-    pwm_set_enabled(slice_num, true);
-    sleep_ms(duration_ms); // so note plays intended length
-    pwm_set_chan_level(slice_num, channel, 0);
-}
-
-//////////////////////////////////////////////////////////////////////////////
+#define BUFFER_SIZE 1024
 
 int main() {
     stdio_init_all();
-    gpio_set_function(GPIO, GPIO_FUNC_PWM);
+    init_pwm_dma();
 
-    // ievan polkka
-    struct {
-        int freq;
-        int duration;
-    } song[] = {
-        {Csharp, 500}, {Fsharp, 500}, {Fsharp, 750}, {Gsharp, 250}, 
-        {A, 250}, {A, 250}, {Fsharp, 250}, {Fsharp, 250},
-        {Fsharp, 500}, {Fsharp, 250}, {A, 250}, {Gsharp, 500},
-        {E, 500}, {E, 500}, {Gsharp, 500}, {A, 500},
-        {Fsharp, 500}, {Fsharp, 500}, {Fsharp, 250}, {Fsharp, 250},
-        {Csharp, 500}, {Fsharp, 500}, {Fsharp, 750}, {Gsharp, 250},
-        {A, 500}, {Fsharp, 500}, {Fsharp, 500}, {Fsharp, 250},
-        {A, 250}, {C2sharp, 250}, {C2sharp, 250}, {C2sharp, 250},
-        {B, 250}, {A, 500}, {Gsharp, 500}, {A, 500},
-        {Fsharp, 500}, {Fsharp, 500}, {Fsharp, 250}, {A, 250},
-        {C2sharp, 500}, {C2sharp, 500}, {B, 500}, {A, 500},
-        {Gsharp, 500}, {E, 500}, {E, 500}, {E, 250},
-        {Gsharp, 250}, {B, 250}, {B, 250}, {B, 250},
-        {B, 250}, {A, 250}, {A, 250}, {Gsharp, 250},
-        {Gsharp, 250}, {A, 500}, {Fsharp, 500}, {Fsharp, 500},
-        {Fsharp, 250}, {A, 250}, {C2sharp, 500}, {C2sharp, 500}, 
-        {B, 500}, {A, 500}, {Gsharp, 500}, {E, 500}, 
-        {E, 500}, {E, 250}, {Gsharp, 250}, {B, 250}, 
-        {B, 250}, {B, 250}, {B, 250}, {A, 250}, 
-        {A, 250}, {Gsharp, 250}, {Gsharp, 250}, {A, 500}, 
-        {Fsharp, 500}, {Fsharp, 750}, {Fsharp, 250}
-    };
+    const uint8_t* wav_ptr = ievan_polkka_96_34s_wav + 44;
+    int total_samples = (ievan_polkka_96_34s_wav_len - 44) / 2;
+    int samples_played = 0;
 
-    int song_length = sizeof(song)/sizeof(song[0]);
+    for (int i = 0; i < 2; i++) {
+        int count = total_samples - samples_played;
+        if (count > BUFFER_SIZE) count = BUFFER_SIZE;
+        if (count <= 0) break;
 
-    for(;;) {
-        for (int i = 0; i < song_length; i++) {
-            play_tone(GPIO, song[i].freq, song[i].duration);
-            sleep_ms(50);
-        }
+        fill_pwm_buffer(pwm_buffer[i], wav_ptr + samples_played * 2, count);
+        buffer_ready[i] = false;
+        samples_played += count;
     }
 
+    dma_channel_set_read_addr(dma_chan, pwm_buffer[0], true);
+    dma_channel_start(dma_chan);
+
+    while (samples_played < total_samples) {
+        for (int i = 0; i < 2; i++) {
+            if (buffer_ready[i]) {
+                int count = total_samples - samples_played;
+                if (count > BUFFER_SIZE) count = BUFFER_SIZE;
+                if (count <= 0) {
+                    playback_active = false;
+                    continue;
+                }
+
+                fill_pwm_buffer(pwm_buffer[i], wav_ptr + samples_played * 2, count);
+                buffer_ready[i] = false;
+                samples_played += count;
+            }
+        }
+        tight_loop_contents();
+    }
+
+    while (dma_channel_is_busy(dma_chan)) tight_loop_contents();
+
+    dma_channel_set_irq0_enabled(dma_chan, false);
+    irq_set_enabled(DMA_IRQ_0, false);
+    dma_channel_abort(dma_chan);
+    dma_channel_unclaim(dma_chan);
+
+    uint slice = pwm_gpio_to_slice_num(28);
+    pwm_set_chan_level(slice, pwm_gpio_to_channel(28), 3905 / 2);
+
+    printf("Playback finished.\n");
     return 0;
 }

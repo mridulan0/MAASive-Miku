@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define AUDIO_GPIO 28
+#define AUDIO_GPIO 27
 #define PWM_TOP 3905
 #define BUFFER_SIZE 1024
 
@@ -57,10 +57,11 @@ void init_pwm_dma() {
     irq_set_enabled(DMA_IRQ_0, true);
 }
 
-void fill_pwm_buffer(uint16_t* dest, const uint8_t* src, int count) {
+void fill_pwm_buffer(uint16_t* dest, const uint8_t* src, int count, float multiplier) {
     for (int i = 0; i < count; i++) {
         int16_t sample = src[0] | (src[1] << 8);
         src += 2;
+        sample = sample * multiplier;
         dest[i] = ((int32_t)sample + 32768) * PWM_TOP / 65535;
     }
 }

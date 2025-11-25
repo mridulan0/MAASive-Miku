@@ -24,8 +24,13 @@ int main() {
 
     for (int i = 0; i < 2; i++) {
         int count = total_samples - samples_played;
-        if (count > BUFFER_SIZE) count = BUFFER_SIZE;
-        if (count <= 0) break;
+        if (count > BUFFER_SIZE) {
+            count = BUFFER_SIZE;
+        }
+
+        if (count <= 0) {
+            break;
+        }
 
         fill_pwm_buffer(pwm_buffer[i], wav_ptr + samples_played * 2, count);
         buffer_ready[i] = false;
@@ -53,7 +58,9 @@ int main() {
         tight_loop_contents();
     }
 
-    while (dma_channel_is_busy(dma_chan)) tight_loop_contents();
+    while (dma_channel_is_busy(dma_chan)) {
+        tight_loop_contents();
+    }
 
     dma_channel_set_irq0_enabled(dma_chan, false);
     irq_set_enabled(DMA_IRQ_0, false);

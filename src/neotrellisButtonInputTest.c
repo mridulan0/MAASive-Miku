@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include <stdlib.h>
+#include <time.h>
 
 // NeoTrellis I2C address (default)
 #define NEOTRELLIS_ADDR 0x2E
@@ -16,12 +18,11 @@
 #define SEESAW_KEYPAD_BASE 0x10
 #define SEESAW_NEOPIXEL_BASE 0x0E
 
-// Seesaw GPIO/Keypad commands
-#define SEESAW_GPIO_BULK 0x04
-#define SEESAW_GPIO_BULK_SET 0x05
+// Seesaw commands
 #define SEESAW_KEYPAD_EVENT 0x01
 #define SEESAW_KEYPAD_INTENSET 0x02
 #define SEESAW_KEYPAD_INTENCLR 0x03
+#define SEESAW_KEYPAD_COUNT 0x04
 
 // Seesaw NeoPixel commands
 #define SEESAW_NEOPIXEL_PIN 0x01
@@ -36,7 +37,7 @@
 #define NEO_TRELLIS_NUM_COLS 4
 
 // Game constants
-#define GAME_BPM 120  // Beats per minute - adjust this to change speed
+#define GAME_BPM 120
 #define BEAT_INTERVAL_MS (60000 / GAME_BPM)
 
 // Key event structure
@@ -65,13 +66,15 @@ int seesaw_write(uint8_t reg_base, uint8_t reg, uint8_t *data, uint8_t len) {
 int seesaw_read(uint8_t reg_base, uint8_t reg, uint8_t *buf, uint8_t len) {
     uint8_t cmd[2] = {reg_base, reg};
     
-    if (i2c_write_blocking(I2C_PORT, NEOTRELLIS_ADDR, cmd, 2, true) < 0) {
+    int result = i2c_write_blocking(I2C_PORT, NEOTRELLIS_ADDR, cmd, 2, true);
+    if (result < 0) {
         return -1;
     }
     
-    sleep_ms(5);
+    sleep_ms(1);
     
-    if (i2c_read_blocking(I2C_PORT, NEOTRELLIS_ADDR, buf, len, false) < 0) {
+    result = i2c_read_blocking(I2C_PORT, NEOTRELLIS_ADDR, buf, len, false);
+    if (result < 0) {
         return -1;
     }
     
@@ -99,16 +102,17 @@ int init_neopixels() {
         printf("Failed to set buffer length\n");
         return -1;
     }
+    printf("Set NeoPixel buffer length to %d bytes\n", buf_len);
     
     return 0;
 }
 
 // Initialize keypad
 int init_keypad() {
-    // Enable all key events
-    uint8_t data[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-    if (seesaw_write(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_INTENSET, data, 4) < 0) {
-        printf("Failed to enable keypad interrupts\n");
+    // Enable keypad interrupt for all keys
+    uint8_t enable_data[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    if (seesaw_write(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_INTENSET, enable_data, 4) < 0) {
+        printf("Failed to enable keypad events\n");
         return -1;
     }
     
@@ -116,23 +120,38 @@ int init_keypad() {
     return 0;
 }
 
-// Read keypad events
-int read_keypad(keyEvent *event) {
-    uint8_t buf[2];
+// Read available keypad events
+int read_keypad_events(keyEvent *events, int max_events) {
+    uint8_t count_buf;
     
-    if (seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_EVENT, buf, 2) < 0) {
+    // First, read how many events are available
+    if (seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_COUNT, &count_buf, 1) < 0) {
         return -1;
     }
     
-    // Check if there's a valid event (both bytes should not be 0)
-    if (buf[0] == 0 && buf[1] == 0) {
-        return 0; // No event
+    int num_events = count_buf;
+    if (num_events == 0) {
+        return 0;
     }
     
-    event->number = (buf[0] >> 2) & 0x3F;
-    event->edge = buf[0] & 0x03;
+    if (num_events > max_events) {
+        num_events = max_events;
+    }
     
-    return 1; // Event available
+    // Read events from FIFO
+    uint8_t fifo_buf[32];
+    if (seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_EVENT, fifo_buf, num_events) < 0) {
+        return -1;
+    }
+    
+    // Parse events
+    for (int i = 0; i < num_events; i++) {
+        uint8_t raw = fifo_buf[i];
+        events[i].number = (raw >> 2) & 0x3F;
+        events[i].edge = raw & 0x03;
+    }
+    
+    return num_events;
 }
 
 // Set color of a specific key (pixel)
@@ -144,7 +163,7 @@ int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) {
     
     buf[0] = (offset >> 8) & 0xFF;
     buf[1] = offset & 0xFF;
-    buf[2] = g;
+    buf[2] = g; // NeoPixels use GRB order
     buf[3] = r;
     buf[4] = b;
     
@@ -169,14 +188,6 @@ int clear_all_pixels() {
     return show_pixels();
 }
 
-// Game state
-typedef struct {
-    int active_column;  // Which column is currently lit (0-3)
-    int score;
-    int misses;
-    bool waiting_for_press;
-} GameState;
-
 // Light up a column
 void light_column(int col, uint8_t r, uint8_t g, uint8_t b) {
     for (int row = 0; row < NEO_TRELLIS_NUM_ROWS; row++) {
@@ -192,6 +203,14 @@ bool is_button_in_column(uint8_t button, int column) {
     return button_col == column;
 }
 
+// Game state
+typedef struct {
+    int active_column;
+    int score;
+    int misses;
+    bool waiting_for_press;
+} GameState;
+
 // Play the game
 void play_game() {
     GameState game = {0};
@@ -204,7 +223,10 @@ void play_game() {
     
     printf("\n=== Piano Tiles Game Started! ===\n");
     printf("Press buttons in the lit column!\n");
-    printf("BPM: %d\n\n", GAME_BPM);
+    printf("BPM: %d (interval: %d ms)\n\n", GAME_BPM, BEAT_INTERVAL_MS);
+    
+    // Seed random number generator
+    srand(time_us_32());
     
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
@@ -224,6 +246,7 @@ void play_game() {
             game.active_column = rand() % NEO_TRELLIS_NUM_COLS;
             
             // Light up the column (green)
+            printf("New column: %d\n", game.active_column);
             light_column(game.active_column, 0, 50, 0);
             
             game.waiting_for_press = true;
@@ -231,34 +254,38 @@ void play_game() {
         }
         
         // Check for button presses
-        keyEvent event;
-        if (read_keypad(&event) > 0) {
-            // Only care about button presses (rising edge)
-            if (event.edge == 1) {
-                printf("Button pressed: %d\n", event.number);
-                
-                if (game.waiting_for_press) {
-                    // Check if correct button
-                    if (is_button_in_column(event.number, game.active_column)) {
-                        game.score++;
-                        printf("HIT! Score: %d | Misses: %d\n", game.score, game.misses);
-                        
-                        // Flash the column white for feedback
-                        light_column(game.active_column, 50, 50, 50);
-                        sleep_ms(100);
-                        light_column(game.active_column, 0, 50, 0);
-                        
-                        game.waiting_for_press = false;
-                    } else {
-                        // Wrong button pressed
-                        game.misses++;
-                        printf("WRONG BUTTON! Score: %d | Misses: %d\n", game.score, game.misses);
-                        
-                        // Flash red for feedback
-                        int wrong_col = event.number % NEO_TRELLIS_NUM_COLS;
-                        light_column(wrong_col, 50, 0, 0);
-                        sleep_ms(100);
-                        light_column(game.active_column, 0, 50, 0);
+        keyEvent events[16];
+        int num_events = read_keypad_events(events, 16);
+        
+        if (num_events > 0) {
+            for (int i = 0; i < num_events; i++) {
+                // Only care about button presses (edge == 1 or 3)
+                if (events[i].edge == 1 || events[i].edge == 3) {
+                    printf("Button pressed: %d (edge: %d)\n", events[i].number, events[i].edge);
+                    
+                    if (game.waiting_for_press) {
+                        // Check if correct button
+                        if (is_button_in_column(events[i].number, game.active_column)) {
+                            game.score++;
+                            printf("HIT! Score: %d | Misses: %d\n", game.score, game.misses);
+                            
+                            // Flash the column white for feedback
+                            light_column(game.active_column, 50, 50, 50);
+                            sleep_ms(100);
+                            light_column(game.active_column, 0, 50, 0);
+                            
+                            game.waiting_for_press = false;
+                        } else {
+                            // Wrong button pressed
+                            game.misses++;
+                            printf("WRONG BUTTON! Score: %d | Misses: %d\n", game.score, game.misses);
+                            
+                            // Flash red for feedback
+                            int wrong_col = events[i].number % NEO_TRELLIS_NUM_COLS;
+                            light_column(wrong_col, 50, 0, 0);
+                            sleep_ms(100);
+                            light_column(game.active_column, 0, 50, 0);
+                        }
                     }
                 }
             }
@@ -299,6 +326,16 @@ int main() {
     printf("Initialization complete!\n");
     
     // Clear display
+    clear_all_pixels();
+    sleep_ms(500);
+    
+    // Test: light up all buttons briefly to confirm LEDs work
+    printf("Testing LEDs...\n");
+    for (int i = 0; i < NEO_TRELLIS_NUM_KEYS; i++) {
+        set_pixel_color(i, 10, 10, 10);
+    }
+    show_pixels();
+    sleep_ms(1000);
     clear_all_pixels();
     sleep_ms(500);
     

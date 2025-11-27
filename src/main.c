@@ -54,7 +54,7 @@ void advance_beat(void) {
     current_target = rand() % NEO_TRELLIS_NUM_KEYS;
 
     // light that key (your set_pixel_color produces random colors)
-    set_pixel_color(current_target);
+    set_pixel_color(current_target, 50, 180, 255);
     show_pixels();
 
     printf("New target: %d\n", current_target);

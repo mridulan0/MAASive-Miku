@@ -153,13 +153,8 @@ int init_neopixels() {
     return 0;
 }
 
-int set_pixel_color(uint8_t pixel) { //edited so that color is randomized
+int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) { //edited so its hatsune miku blue
     if (pixel >= NEO_TRELLIS_NUM_KEYS) return -1;
-    
-    // generate random colors
-    uint8_t rand_r = (rand() % 180) + 40;   // avoid too-dim colors
-    uint8_t rand_g = (rand() % 180) + 40;
-    uint8_t rand_b = (rand() % 180) + 40;
 
     uint8_t buf[5];
     uint16_t offset = pixel * 3;
@@ -168,9 +163,9 @@ int set_pixel_color(uint8_t pixel) { //edited so that color is randomized
     buf[1] = offset & 0xFF;
 
     // Seesaw NeoPixels use GRB order
-    buf[2] = rand_g;
-    buf[3] = rand_r;
-    buf[4] = rand_b;
+    buf[2] = g;
+    buf[3] = r;
+    buf[4] = b;
 
     int result = seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_BUF, buf, 5);
     sleep_ms(2);
@@ -188,7 +183,7 @@ int show_pixels() {
 // Clear all pixels
 int clear_all_pixels() {
     for (int i = 0; i < NEO_TRELLIS_NUM_KEYS; i++) {
-        if (set_pixel_color(i) < 0) {
+        if (set_pixel_color(i, 0, 0, 0) < 0) {
             return -1;
         }
     }

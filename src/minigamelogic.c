@@ -10,7 +10,7 @@ static int score = 0;
 static uint8_t current_target = 255;   // 0–15 = valid, 255 = no target
 
 // BPM control
-static int bpm = 100;                  // change this for speed
+static int bpm = 122;                  // change this for speed
 static uint32_t beat_interval_ms = 0;
 static uint32_t last_beat_ms = 0;
 

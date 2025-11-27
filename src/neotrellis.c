@@ -1,74 +1,35 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "neotrellis.h"
 
-// NeoTrellis I2C address (default)
-#define NEOTRELLIS_ADDR 0x2E
+/*! \brief Initialize I2C, corresponding SDA, SCK pins
+*/
+void init_i2c(){
+    i2c_init(I2C_PORT, 400000); // 400 kHz
+    gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA_PIN);
+    gpio_pull_up(I2C_SCL_PIN);
+}
 
-// I2C pins (adjust to your wiring)
-#define I2C_SDA_PIN 28
-#define I2C_SCL_PIN 29
-#define I2C_PORT i2c0
-
-// Seesaw registers
-#define SEESAW_STATUS_BASE 0x00
-#define SEESAW_NEOPIXEL_BASE 0x0E
-
-// Seesaw NeoPixel commands
-#define SEESAW_NEOPIXEL_PIN 0x01
-#define SEESAW_NEOPIXEL_SPEED 0x02
-#define SEESAW_NEOPIXEL_BUF_LENGTH 0x03
-#define SEESAW_NEOPIXEL_BUF 0x04
-#define SEESAW_NEOPIXEL_SHOW 0x05
-
-// Keypad commands
-#define SEESAW_KEYPAD_BASE 0x10
-#define SEESAW_KEYPAD_STATUS 0x00
-#define SEESAW_KEYPAD_EVENT 0x01
-#define SEESAW_KEYPAD_INTENSET 0x02
-#define SEESAW_KEYPAD_INTENCLR 0x03
-#define SEESAW_KEYPAD_COUNT 0x04
-#define SEESAW_KEYPAD_FIFO 0x10
-
-enum {
-  SEESAW_KEYPAD_EDGE_HIGH = 0,
-  SEESAW_KEYPAD_EDGE_LOW,
-  SEESAW_KEYPAD_EDGE_FALLING,
-  SEESAW_KEYPAD_EDGE_RISING,
-};
-
-// NeoTrellis constants
-#define NEO_TRELLIS_NUM_KEYS 16
-static int button_num[NEO_TRELLIS_NUM_KEYS] = { 0, 1, 2, 3, 
-                                                8, 9, 10, 11,
-                                                16, 17, 18, 19,
-                                                24, 25, 26, 27};
-
-typedef struct{
-    uint8_t EDGE: 2;
-    uint8_t NUM: 6;
-} keyEvent;
-
-union keyState {
-    struct {
-        uint8_t STATE : 1;  ///< the current state of the key
-        uint8_t ACTIVE : 4; ///< the registered events for that key
-    } bit;
-    uint8_t reg;
-};
-
-typedef void (*TrellisCallback)(keyEvent evt);
-TrellisCallback (*_callbacks[NEO_TRELLIS_NUM_KEYS])(keyEvent);
-
+/*! \brief Find corresponding trellis key number on the keypad given key index
+*/
 uint8_t neotrellis_key_finder(uint8_t key_num) {
     return ((key_num/8) * 4 + (key_num%8));
 }
 
-// Write data to Seesaw register
-int seesaw_write(uint8_t reg_base, uint8_t reg, uint8_t *data, uint8_t len) {
+/*! \brief Write data to Seesaw register
+    \param regHigh higher precedence register address for data source 
+    \param regLow lower precedence register address for data source
+    \param data data to write to the register
+    \param len length of data in bytes
+    \return 0 if data is written successfully
+*/
+static int seesaw_write(uint8_t regHigh, uint8_t regLow, uint8_t *data, uint8_t len) {
     uint8_t buf[34];
-    buf[0] = reg_base;
-    buf[1] = reg;
+    buf[0] = regHigh;
+    buf[1] = regLow;
     
     for (int i = 0; i < len; i++) {
         buf[2 + i] = data[i];
@@ -80,14 +41,22 @@ int seesaw_write(uint8_t reg_base, uint8_t reg, uint8_t *data, uint8_t len) {
     return result > 0 ? 0 : -1;
 }
 
-bool seesaw_read(uint8_t regHigh, uint8_t regLow, uint8_t *buf, uint8_t num, uint16_t delay) {
+/*! \brief Read data from Seesaw
+    \param regHigh higher precedence register address for data source 
+    \param regLow lower precedence register address for data source
+    \param buf address to write to
+    \param len length of data to read
+    \param delay time to wait between reading and writing from I2C 
+    \return if data is read successfully
+*/
+static bool seesaw_read(uint8_t regHigh, uint8_t regLow, uint8_t *buf, uint8_t len, uint16_t delay) {
     uint8_t pos = 0;
     uint8_t prefix[2];
     prefix[0] = (uint8_t)regHigh;
     prefix[1] = (uint8_t)regLow;
 
-    while (pos<num) {
-        uint8_t read_now = MIN(32,num-pos);
+    while (pos<len) {
+        uint8_t read_now = MIN(32,len-pos);
         if(i2c_write_blocking(I2C_PORT, NEOTRELLIS_ADDR, prefix, 2, false) < 0)
             return false;
         sleep_us(delay);
@@ -98,7 +67,11 @@ bool seesaw_read(uint8_t regHigh, uint8_t regLow, uint8_t *buf, uint8_t num, uin
     }
     return true;
 }
-uint8_t getCount(void) {
+
+/*! \brief Get event count from Seesaw count 
+    \return Number of events occurred from last poll
+*/
+static uint8_t getCount(void) {
     uint8_t count = 0;
 
     // From Arduino src code 
@@ -107,35 +80,44 @@ uint8_t getCount(void) {
     return count;
 }
 
+/*! \brief Read from keypad fifo register
+    \param buf bufferr to write the data read to
+    \param count value from count register
+    \return if fifo is successfully read
+*/
 bool readKeypad(keyEvent *buf, uint8_t count) {
-    uint8_t buffer[4]={0};
-    seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_FIFO, (uint8_t*)buf, count, 1000);
-    // seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_FIFO, buffer, count, 1000);
-    // buf[count].NUM = buffer[0] >> 2;
-    // buf[count].EDGE = buffer[0] &0x3;
-    printf("\n");
+    return seesaw_read(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_FIFO, (uint8_t*)buf, count, 1000);
+    
     // printf("\nbuffer %d, %d", buf[count].NUM, buf[count].EDGE);
-    return true;
 }
 
-int neo_read(){
+/*! \brief continuously poll keypad for events, call associated function when event detected
+*/
+void neo_read(){
+    // Get event count from count register
     uint8_t count = getCount();
     sleep_us(500);
 
     if (count > 0){
-        count += 2;
+        count += 2; //because no interrupt pin
+
+        // Creates keyEvent array with "count" number of events 
         keyEvent e[count];
+
+        // Read the corresponding events from the FIFO register
         readKeypad(e, count);
         for (int i = 0; i<count; i++) {
+
+            // Convert weird keypad number to key index
             e[i].NUM = neotrellis_key_finder(e[i].NUM);
+
+            // If valid key, and corresponding fxn exists, run it
             if(e[i].NUM < NEO_TRELLIS_NUM_KEYS && _callbacks[e[i].NUM] != NULL){
                 keyEvent evt = {e[i].EDGE, e[i].NUM};
                 _callbacks[e[i].NUM](evt);
             }
         }
     }
-
-    return count;
 }
 
 // Initialize NeoPixels on the NeoTrellis
@@ -156,8 +138,9 @@ int init_neopixels() {
     }
     uint8_t buf = 0x01;
     seesaw_write(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_INTENSET, &buf, 1);
+
     // Set buffer length (16 pixels * 3 bytes per pixel = 48 bytes)
-    uint16_t buf_len = NEO_TRELLIS_NUM_KEYS * 3;  // Total bytes, not pixel count
+    uint16_t buf_len = NEO_TRELLIS_NUM_KEYS * 3;  
     uint8_t len_data[2] = {(buf_len >> 8) & 0xFF, buf_len & 0xFF};
     if (seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_BUF_LENGTH, len_data, 2) < 0) {
         printf("Failed to set buffer length\n");
@@ -202,44 +185,28 @@ int clear_all_pixels() {
     return show_pixels();
 }
 
-// Create a rainbow pattern
-int rainbow_pattern() {
-    uint8_t colors[16][3] = {
-        {255, 0, 0}, {255, 32, 0}, {255, 64, 0}, {255, 128, 0},
-        {255, 255, 0}, {128, 255, 0}, {0, 255, 0}, {0, 255, 128},
-        {0, 255, 255}, {0, 128, 255}, {0, 0, 255}, {64, 0, 255},
-        {128, 0, 255}, {255, 0, 255}, {255, 0, 128}, {255, 0, 64}
-    };
-    
-    for (int i = 0; i < 16; i++) {
-        if (set_pixel_color(i, colors[i][0], colors[i][1], colors[i][2]) < 0) {
-            return -1;
-        }
-    }
-    return show_pixels();
-}
-
-// Animate a moving light
-void chase_animation() {
-    for (int i = 0; i < NEO_TRELLIS_NUM_KEYS; i++) {
-        clear_all_pixels();
-        set_pixel_color(i, 0, 50, 100);
-        show_pixels();
-        sleep_ms(100);
-    }
-}
-
+/*! \brief Makeshift "interrupt" function to test keypad input
+    \param evt event to manipulate
+*/
 TrellisCallback printKey(keyEvent evt){
     if (evt.EDGE == SEESAW_KEYPAD_EDGE_RISING){
         set_pixel_color(evt.NUM, 0, 50, 100);
         printf("KEY: %d Pressed", evt.NUM);
+        printf("\n");
     } else if (evt.EDGE == SEESAW_KEYPAD_EDGE_FALLING){
         set_pixel_color(evt.NUM, 0, 0 ,0);
         printf("KEY: %d Released", evt.NUM);
+        printf("\n");
     }
     show_pixels();
     return 0;
 }
+
+/*! \brief Enable/disable key event
+    \param key the corresponding key number
+    \param edge the edge event to enable
+    \param en enable or disable
+*/
 void setKeypadEv(uint8_t key, uint8_t edge, bool en){
     union keyState ks;
     ks.bit.STATE = en;
@@ -248,65 +215,21 @@ void setKeypadEv(uint8_t key, uint8_t edge, bool en){
     seesaw_write(SEESAW_KEYPAD_BASE, SEESAW_KEYPAD_EVENT, cmd, 2);
 }
 
+/*! \brief Set corresponding key function
+    \param key key index
+    \param cb the "interrupt" function to set
+*/
 void regCallback(uint8_t key, TrellisCallback(*cb)(keyEvent)){
     _callbacks[key] = cb;
 }
 
-int main() {
-    // Initialize stdio for printf
-    stdio_init_all();
-    
-    // Initialize I2C
-    i2c_init(I2C_PORT, 400000); // 400 kHz
-    gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(I2C_SDA_PIN);
-    gpio_pull_up(I2C_SCL_PIN);
-    
-    printf("NeoTrellis Demo Starting...\n");
-    sleep_ms(500);
-    
-    // Initialize NeoPixels
-    printf("Initializing NeoPixels...\n");
-    if (init_neopixels() < 0) {
-        printf("Failed to initialize NeoPixels\n");
-        return 1;
-    }
+/*! \brief Initialize keypad event detection
+    \param cb the "interrupt" function to set
+*/
+void init_keypad(TrellisCallback(*cb)(keyEvent)){
     for(int i = 0; i < NEO_TRELLIS_NUM_KEYS; i++){
         setKeypadEv(button_num[i], SEESAW_KEYPAD_EDGE_FALLING, true);
         setKeypadEv(button_num[i], SEESAW_KEYPAD_EDGE_RISING, true);
-        regCallback(i, printKey);
+        regCallback(i, cb);
     }
-    printf("NeoPixels initialized successfully!\n");
-
-    // Main loop with different patterns
-    while (true) {
-        neo_read();
-        // Clear all
-        // int num_events = neo_read(events, 16);
-        // for (int i = 0; i < num_events; i++) {
-        //     uint8_t x, y;
-        //     neotrellis_key_to_xy(events[i].NUM, &x, &y);
-            
-        //     const char *action = (events[i].EDGE == 1) ? "PRESSED" : "RELEASED";
-        //     printf("Key %d (x:%d y:%d) %s\n", events[i].NUM, x, y, action);
-        // }
-
-        // printf("Clearing...\n");
-        // clear_all_pixels();
-        // sleep_ms(1000);
-      
-        // // Rainbow
-        // printf("Rainbow...\n");
-        // rainbow_pattern();
-        // sleep_ms(3000);
-        
-        // // Chase animation
-        // printf("Chase...\n");
-        // for (int i = 0; i < 3; i++) {
-        //     chase_animation();
-        // }
-    }
-    
-    return 0;
 }

@@ -7,7 +7,8 @@
 #include "hardware/pwm.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
-
+#include "hardware/i2c.h"
+#include "neotrellis.h"
 //////////////////////////////////////////////////////////////////////////////
 
 // const char* username1 = "sewell7";
@@ -34,23 +35,24 @@ void modify_frequency(int, float);
 //////////////////////////////////////////////////////////////////////////////
 
 int main() {
-    //initialize all
+    // Initialize stdio for printf
     stdio_init_all();
-
-    //initialize adc
-    float pwm_freq = 0;
-    int adc_channel = 5;
-    init_adc(adc_channel);
-    init_adc_for_freerun();
-
-    //initialize pwm
-    int pwm_channel = 0;
-
-    //freerunning output
-    for(;;) {
-        pwm_freq = (adc_hw->result) / 7.0;
-        modify_frequency(pwm_channel, pwm_freq);
-        fflush(stdout);
-        sleep_ms(1000);
+    
+    // Initialize I2C
+    init_i2c();
+    sleep_ms(500);
+    
+    // Initialize NeoPixels
+    if (init_neopixels() < 0) {
+        printf("Failed to initialize NeoPixels\n");
+        return 1;
     }
+    init_keypad(printKey);
+    printf("NeoPixels initialized successfully!\n");
+
+    while (true) {
+        neo_read();
+    }
+    
+    return 0;
 }

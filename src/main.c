@@ -5,7 +5,7 @@
 #include "hardware/adc.h"
 #include "hardware/structs/dma.h"
 #include "hardware/structs/pwm.h"
-#include "ievan_polkka_96.h"
+#include "ievan_polkka_cut.h"
 
 #define BUFFER_SIZE 1024
 #define AUDIO_GPIO 27
@@ -26,8 +26,8 @@ int main() {
     init_adc();
     init_pwm_dma();
 
-    const uint8_t* wav_ptr = ievan_polkka_96_34s_wav + 44;
-    int total_samples = (ievan_polkka_96_34s_wav_len - 44) / 2;
+    const uint8_t* wav_ptr = ievan_polkka_cut_wav + 44;
+    int total_samples = (ievan_polkka_cut_wav_len - 44) / 2;
     int samples_played = 0;
 
     for (int i = 0; i < 2; i++) {

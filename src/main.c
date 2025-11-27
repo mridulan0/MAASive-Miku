@@ -54,10 +54,10 @@ void advance_beat(void) {
     current_target = rand() % NEO_TRELLIS_NUM_KEYS;
 
     // light that key (your set_pixel_color produces random colors)
-    set_pixel_color(current_target, 0, 0, 0);
+    set_pixel_color(current_target);
     show_pixels();
 
-    printf("🎯 New target: %d\n", current_target);
+    printf("New target: %d\n", current_target);
 }
 
 //when user presses key
@@ -89,19 +89,40 @@ int main() {
     srand(time_us_32());
     
     // Initialize I2C
+    printf("Initializing I2C...\n");
     init_i2c();
     sleep_ms(500);
+    printf("I2C initialized.\n");
     
     // Initialize NeoPixels
+    printf("Initializing NeoPixels (Seesaw)...\n");
     if (init_neopixels() < 0) {
         printf("Failed to initialize NeoPixels\n");
         return 1;
     }
-    init_keypad(printKey);
     printf("NeoPixels initialized successfully!\n");
+    init_keypad(printKey);
+
+    //beat timing
+    beat_interval_ms = 60000 / bpm;  // interval in ms for given BPM
+    last_beat_ms = to_ms_since_boot(get_absolute_time());
+    printf("BPM set to %d → beat_interval_ms = %u ms\n", bpm, beat_interval_ms);
+
+    printf("Starting first beat...\n");
+    advance_beat();
+    
 
     while (true) {
         neo_read();
+        // 2) Beat timing check
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (now - last_beat_ms >= beat_interval_ms) {
+            printf("[TIMER] Beat timeout reached. now = %u, last_beat_ms = %u\n", now, last_beat_ms);
+            last_beat_ms = now;
+            advance_beat();
+        }
+        //maybe can edit or remove depends on the play...
+        sleep_ms(1);
     }
     
     return 0;

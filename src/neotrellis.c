@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "neotrellis.h"
+#include <stdlib.h>
 
 /*! \brief Initialize I2C, corresponding SDA, SCK pins
 */
@@ -120,6 +121,7 @@ void neo_read(){
     }
 }
 
+
 // Initialize NeoPixels on the NeoTrellis
 int init_neopixels() {
     uint8_t pin = 3; // NeoPixel pin on Seesaw
@@ -151,23 +153,31 @@ int init_neopixels() {
     return 0;
 }
 
-// Set color of a specific key (pixel)
-int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) {
+int set_pixel_color(uint8_t pixel) { //edited so that color is randomized
     if (pixel >= NEO_TRELLIS_NUM_KEYS) return -1;
     
+    // generate random colors
+    uint8_t rand_r = (rand() % 180) + 40;   // avoid too-dim colors
+    uint8_t rand_g = (rand() % 180) + 40;
+    uint8_t rand_b = (rand() % 180) + 40;
+
     uint8_t buf[5];
     uint16_t offset = pixel * 3;
-    
+
     buf[0] = (offset >> 8) & 0xFF;
     buf[1] = offset & 0xFF;
-    buf[2] = g; // NeoPixels use GRB order
-    buf[3] = r;
-    buf[4] = b;
-    
+
+    // Seesaw NeoPixels use GRB order
+    buf[2] = rand_g;
+    buf[3] = rand_r;
+    buf[4] = rand_b;
+
     int result = seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_BUF, buf, 5);
-    sleep_ms(2); // Add small delay between pixel writes
+    sleep_ms(2);
+
     return result;
 }
+
 
 // Show the pixels (update display)
 int show_pixels() {
@@ -178,7 +188,7 @@ int show_pixels() {
 // Clear all pixels
 int clear_all_pixels() {
     for (int i = 0; i < NEO_TRELLIS_NUM_KEYS; i++) {
-        if (set_pixel_color(i, 0, 0, 0) < 0) {
+        if (set_pixel_color(i) < 0) {
             return -1;
         }
     }
@@ -188,19 +198,19 @@ int clear_all_pixels() {
 /*! \brief Makeshift "interrupt" function to test keypad input
     \param evt event to manipulate
 */
-TrellisCallback printKey(keyEvent evt){
-    if (evt.EDGE == SEESAW_KEYPAD_EDGE_RISING){
-        set_pixel_color(evt.NUM, 0, 50, 100);
-        printf("KEY: %d Pressed", evt.NUM);
-        printf("\n");
-    } else if (evt.EDGE == SEESAW_KEYPAD_EDGE_FALLING){
-        set_pixel_color(evt.NUM, 0, 0 ,0);
-        printf("KEY: %d Released", evt.NUM);
-        printf("\n");
-    }
-    show_pixels();
-    return 0;
-}
+// TrellisCallback printKey(keyEvent evt){
+//     if (evt.EDGE == SEESAW_KEYPAD_EDGE_RISING){
+//         set_pixel_color(evt.NUM);
+//         printf("KEY: %d Pressed", evt.NUM);
+//         printf("\n");
+//     } else if (evt.EDGE == SEESAW_KEYPAD_EDGE_FALLING){
+//         set_pixel_color(evt.NUM);
+//         printf("KEY: %d Released", evt.NUM);
+//         printf("\n");
+//     }
+//     show_pixels();
+//     return 0;
+// }
 
 /*! \brief Enable/disable key event
     \param key the corresponding key number

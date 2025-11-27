@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
@@ -22,6 +23,7 @@
 #define SEESAW_KEYPAD_EVENT 0x01
 #define SEESAW_KEYPAD_INTENSET 0x02
 #define SEESAW_KEYPAD_INTENCLR 0x03
+#define SEESAW_KEYPAD_FIFO 0X10
 
 // Seesaw NeoPixel commands
 #define SEESAW_NEOPIXEL_PIN 0x01
@@ -56,7 +58,7 @@ int seesaw_write(uint8_t reg_base, uint8_t reg, uint8_t *data, uint8_t len) {
     }
     
     int result = i2c_write_blocking(I2C_PORT, NEOTRELLIS_ADDR, buf, len + 2, false);
-    sleep_ms(5);
+    sleep_ms(5); // Increased delay for more reliable communication
     
     return result > 0 ? 0 : -1;
 }
@@ -77,32 +79,34 @@ int seesaw_read(uint8_t reg_base, uint8_t reg, uint8_t *buf, uint8_t len) {
     
     return 0;
 }
-
 // Initialize NeoPixels on the NeoTrellis
 int init_neopixels() {
-    uint8_t pin = 3;
+    uint8_t pin = 3; // NeoPixel pin on Seesaw
     
+    // Set NeoPixel pin
     if (seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_PIN, &pin, 1) < 0) {
         printf("Failed to set NeoPixel pin\n");
         return -1;
     }
     
+    // Set NeoPixel speed (800 KHz)
     uint8_t speed = 1;
     if (seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_SPEED, &speed, 1) < 0) {
         printf("Failed to set NeoPixel speed\n");
         return -1;
     }
     
-    uint16_t buf_len = NEO_TRELLIS_NUM_KEYS * 3;
+    // Set buffer length (16 pixels * 3 bytes per pixel = 48 bytes)
+    uint16_t buf_len = NEO_TRELLIS_NUM_KEYS * 3;  // Total bytes, not pixel count
     uint8_t len_data[2] = {(buf_len >> 8) & 0xFF, buf_len & 0xFF};
     if (seesaw_write(SEESAW_NEOPIXEL_BASE, SEESAW_NEOPIXEL_BUF_LENGTH, len_data, 2) < 0) {
         printf("Failed to set buffer length\n");
         return -1;
     }
+    printf("Set NeoPixel buffer length to %d bytes\n", buf_len);
     
     return 0;
 }
-
 // Initialize keypad
 int init_keypad() {
     // Enable all key events

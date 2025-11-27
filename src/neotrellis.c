@@ -190,6 +190,45 @@ int clear_all_pixels() {
     return show_pixels();
 }
 
+//function for fading the led in and out
+// Fade a pixel in and out in Hatsune Miku blue over total duration_ms
+void fade_pixel_miku(uint8_t pixel, uint32_t duration_ms) {
+    // Hatsune Miku blue base color
+    const uint8_t base_r = 0;
+    const uint8_t base_g = 220;
+    const uint8_t base_b = 255;
+
+    const int steps = 20; // more steps = smoother fade
+    uint32_t half = duration_ms / 2;
+    uint32_t step_delay = half / steps; // ms per brightness step
+
+    // Fade IN
+    for (int i = 0; i <= steps; i++) {
+        uint8_t r = (base_r * i) / steps;
+        uint8_t g = (base_g * i) / steps;
+        uint8_t b = (base_b * i) / steps;
+
+        set_pixel_color(pixel, r, g, b);
+        show_pixels();
+        sleep_ms(step_delay);
+    }
+
+    // Fade OUT
+    for (int i = steps; i >= 0; i--) {
+        uint8_t r = (base_r * i) / steps;
+        uint8_t g = (base_g * i) / steps;
+        uint8_t b = (base_b * i) / steps;
+
+        set_pixel_color(pixel, r, g, b);
+        show_pixels();
+        sleep_ms(step_delay);
+    }
+
+    // End fully off
+    set_pixel_color(pixel, 0, 0, 0);
+    show_pixels();
+}
+
 /*! \brief Makeshift "interrupt" function to test keypad input
     \param evt event to manipulate
 */

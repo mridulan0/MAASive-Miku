@@ -25,6 +25,7 @@ void init_adc(int);
 void init_adc_for_freerun();
 void modify_frequency(int, float);
 void advance_beat(void);
+void fade_pixel_miku(uint8_t pixel, uint32_t duration_ms);
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +45,9 @@ uint8_t current_target = 255;// which key should be hit (0–15), 255 = no targe
 int bpm = 120;// change this for speed
 uint32_t beat_interval_ms = 0;// ms between beats
 uint32_t last_beat_ms = 0; // last time we advanced
+// Game duration (30 seconds)
+uint32_t game_duration_ms = 34000;  // 30,000 ms = 30 s
+uint32_t game_start_ms = 0;
 
 //game logic
 void advance_beat(void) {
@@ -54,8 +58,8 @@ void advance_beat(void) {
     current_target = rand() % NEO_TRELLIS_NUM_KEYS;
 
     // light that key (your set_pixel_color produces random colors)
-    set_pixel_color(current_target, 50, 180, 255);
-    show_pixels();
+    //fading version
+    fade_pixel_miku(current_target, 1000);
 
     printf("New target: %d\n", current_target);
 }
@@ -113,11 +117,21 @@ int main() {
     
 
     while (true) {
-        neo_read();
         // 2) Beat timing check
         uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (now - game_start_ms >= game_duration_ms) {
+            printf("Time's up! Final score = %d\n", score);
+            clear_all_pixels();
+            show_pixels();
+
+            while (1) {
+                sleep_ms(1000);
+            }
+        }
+        neo_read();
+
         if (now - last_beat_ms >= beat_interval_ms) {
-            printf("[TIMER] Beat timeout reached. now = %u, last_beat_ms = %u\n", now, last_beat_ms);
+            printf("Beat timeout reached. now = %u, last_beat_ms = %u\n", now, last_beat_ms);
             last_beat_ms = now;
             advance_beat();
         }

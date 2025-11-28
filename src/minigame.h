@@ -1,6 +1,6 @@
 // game.h
-#ifndef GAME_H
-#define GAME_H
+#ifndef MINIGAME_H
+#define MINIGAME_H
 
 #include <stdint.h>
 #include "neotrellis.h"   // for keyEvent, TrellisCallback, etc.

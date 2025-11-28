@@ -20,7 +20,7 @@ static uint32_t last_beat_ms = 0;
 static uint32_t nxt_beat_ms = 0;
 
 // Game duration (30 seconds)
-static uint32_t game_duration_ms = 33000;  // 30 s
+static uint32_t game_duration_ms = 33000;  // 33 s
 static uint32_t game_start_ms = 0;
 
 bool valid_hit = false;
@@ -86,12 +86,9 @@ static TrellisCallback printKey(keyEvent evt) {
     return 0;
 }
 
-//Public: initialize game
+// Initialize game
 void game_init(void) {
     printf("Initializing game logic...\n");
-
-    // Setup keypad with our callback
-    printf("init_keypad(printKey)\n");
     init_keypad(printKey);
 
     // Set up beat timing
@@ -101,7 +98,7 @@ void game_init(void) {
     clear_all_pixels();
 
     printf("BPM = %d → beat_interval_ms = %u ms\n", bpm, beat_interval_ms);
-    printf("Game duration = %u ms (~30 s)\n", game_duration_ms);
+    printf("Game duration = %u ms (~33 s)\n", game_duration_ms);
 }
 
 //Public: one "step" of the game
@@ -116,7 +113,6 @@ void game_step(void) {
     if (now - game_start_ms >= game_duration_ms) {
         printf("Time's up! Final score = %d\n", score);
         clear_all_pixels();
-        show_pixels();
 
         // park here - or you could add restart logic, etc.
         while (1) {
@@ -127,9 +123,8 @@ void game_step(void) {
     // Always process keypad events
     neo_read();
 
-    // Check beat timing
+    // Pad timing by +- 100ms for reaction time
     if (now - last_beat_ms + 100 >= beat_interval_ms && !cur_check) {
-        printf("Beat timeout. now = %u, last_beat_ms = %u\n", now, last_beat_ms);
         cur_check = true;
         nxt_check = false;
         prev_target = current_target;

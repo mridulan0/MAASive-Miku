@@ -10,6 +10,11 @@
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
 #include "hardware/dma.h"
+#include "hardware/i2c.h"
+#include "neotrellis.h"
+#include "minigame.h"
+#include "pico/time.h"
+//////////////////////////////////////////////////////////////////////////////
 #include "hardware/adc.h"
 #include "hardware/structs/dma.h"
 #include "hardware/structs/pwm.h"
@@ -48,6 +53,13 @@ void init_spi_lcd();
 Picture* load_image(const uint8_t* image_data);
 void free_image(Picture* pic);
 
+// Function Declarations
+int determine_gpio_from_channel(int);
+void init_adc(int);
+void init_adc_for_freerun();
+void modify_frequency(int, float);
+void advance_beat(void);
+void fade_pixel_miku(uint8_t pixel, uint32_t duration_ms);
 // song playing functions
 void init_pwm_dma();
 void fill_pwm_buffer();
@@ -122,9 +134,35 @@ void core1_main() {
     }
 }
 
+// mini game variables
+
 int main() {
     stdio_init_all();
 
+    // Seed RNG
+    srand(200);
+    
+    // Initialize I2C
+    init_i2c();
+    sleep_ms(500);
+    
+    // Initialize NeoPixels
+    if (init_neopixels() < 0) {
+        printf("ERROR: Failed to initialize NeoPixels.\n");
+        return 1;
+    }
+
+    // Initialize the game (sets up keypad callback, timers, first target)
+    game_init();
+
+    printf("Game initialized. Entering game loop...\n");
+
+    while (true) {
+        game_step();
+        uint8_t combo = game_get_combo();
+    }
+    
+    return 0;
     multicore_launch_core1(core1_main);
 
     // initialize pwm and dma

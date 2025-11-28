@@ -1,5 +1,6 @@
 #ifndef NEOTRELLIS_H
 // NeoTrellis I2C address (default)
+#define NEOTRELLIS_H
 #include <stdio.h>
 
 #define NEOTRELLIS_ADDR 0x2E
@@ -61,9 +62,12 @@ union keyState {
 typedef void (*TrellisCallback)(keyEvent evt);
 TrellisCallback (*_callbacks[NEO_TRELLIS_NUM_KEYS])(keyEvent);
 
-TrellisCallback printKey(keyEvent evt);
+//TrellisCallback printKey(keyEvent evt);
 void init_i2c();
 void neo_read();
 int init_neopixels();
+int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b);
+int show_pixels();
+int clear_all_pixels();
 void init_keypad(TrellisCallback(*cb)(keyEvent));
 #endif

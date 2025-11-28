@@ -12,6 +12,6 @@ void game_init(void);
 void game_step(void);
 
 // Optional: expose score if you want to print it from main later
-int game_get_score(void);
+int game_get_combo(void);
 
 #endif

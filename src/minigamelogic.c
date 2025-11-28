@@ -8,52 +8,76 @@
 
 static int score = 0;
 static uint8_t current_target = 255;   // 0–15 = valid, 255 = no target
+static uint8_t prev_target = 255;
+static bool cur_check = false;
+static bool nxt_check = false;
+static uint8_t keyHit = 0;
 
 // BPM control
-static int bpm = 122;                  // change this for speed
+static int bpm = 119;                  // change this for speed
 static uint32_t beat_interval_ms = 0;
 static uint32_t last_beat_ms = 0;
+static uint32_t nxt_beat_ms = 0;
 
 // Game duration (30 seconds)
-static uint32_t game_duration_ms = 30000;  // 30 s
+static uint32_t game_duration_ms = 33000;  // 30 s
 static uint32_t game_start_ms = 0;
 
-// Forward declarations (only used inside this file)
-static void advance_beat(void);
-static TrellisCallback printKey(keyEvent evt);
+bool valid_hit = false;
+bool miss = false;
 
-static void advance_beat(void) {
+static void advance_beat(bool clear, bool update, uint8_t* target) {
     printf("Advancing beat...\n");
 
-    clear_all_pixels();
+    if(((*target) != 255 || valid_hit) && clear){
+         if (!valid_hit) {
+            miss = true;
+            if(prev_target!= current_target)
+                set_pixel_color(*target, 0, 0 ,0);
+            *target = 255;
+         }
+         else{
+            valid_hit = false;
+            if(prev_target!= current_target)
+                set_pixel_color(keyHit, 0, 0 ,0);
+         }
+    }
 
-    current_target = rand() % NEO_TRELLIS_NUM_KEYS;
-    printf("New target key index: %u\n", current_target);
+    if(update){
+        *target = rand() % NEO_TRELLIS_NUM_KEYS;
+        printf("New target key index: %u\n", *target);
+        // Hatsune Miku blue
+        set_pixel_color(*target, 0, 220, 255);
 
-    // Hatsune Miku blue
-    set_pixel_color(current_target, 0, 220, 255);
+        printf("Target %u lit in Hatsune Miku blue.\n", *target);
+    }
+
     show_pixels();
-
-    printf("Target %u lit in Hatsune Miku blue.\n", current_target);
 }
 
 //when user presses a key
 static TrellisCallback printKey(keyEvent evt) {
 
     if (evt.EDGE == SEESAW_KEYPAD_EDGE_RISING) {
-        printf("Key pressed: %d (current_target = %d)\n", evt.NUM, current_target);
 
-        if (evt.NUM == current_target) {
+        if (evt.NUM == current_target || evt.NUM == prev_target) {
             score++;
             printf("Correct key! New score = %d\n", score);
 
             // Clear LEDs and wait for next beat
-            printf("Clearing LEDs after correct hit.\n");
-            clear_all_pixels();
+            if (current_target!= prev_target)
+                set_pixel_color(evt.NUM == prev_target?  prev_target: current_target, 152, 251, 152);
+            valid_hit = true;
             show_pixels();
 
-            current_target = 255;   // no active target until next beat
-            printf("current_target reset to 255.\n");
+            if (evt.NUM == prev_target){
+                keyHit = prev_target;
+                prev_target = 255;
+            }
+            else{
+                keyHit = current_target;
+                current_target = 255; 
+            }
         } else {
             printf("Wrong key pressed.\n");
         }
@@ -74,17 +98,19 @@ void game_init(void) {
     beat_interval_ms = 60000 / bpm;
     last_beat_ms = to_ms_since_boot(get_absolute_time());
     game_start_ms = last_beat_ms;
+    clear_all_pixels();
 
     printf("BPM = %d → beat_interval_ms = %u ms\n", bpm, beat_interval_ms);
     printf("Game duration = %u ms (~30 s)\n", game_duration_ms);
-
-    // First target
-    advance_beat();
 }
 
 //Public: one "step" of the game
 void game_step(void) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (miss){
+        score = 0;
+        miss = false;
+    }
 
     // 1) Time's up?
     if (now - game_start_ms >= game_duration_ms) {
@@ -102,10 +128,23 @@ void game_step(void) {
     neo_read();
 
     // Check beat timing
-    if (now - last_beat_ms >= beat_interval_ms) {
+    if (now - last_beat_ms + 100 >= beat_interval_ms && !cur_check) {
         printf("Beat timeout. now = %u, last_beat_ms = %u\n", now, last_beat_ms);
-        last_beat_ms = now;
-        advance_beat();
+        cur_check = true;
+        nxt_check = false;
+        prev_target = current_target;
+        advance_beat(false, true, &current_target);
+    }
+
+    if (now - last_beat_ms >= beat_interval_ms && !nxt_check){
+        nxt_beat_ms = now;
+        nxt_check = true;
+    }
+
+    if (now - last_beat_ms - 100 >= beat_interval_ms){
+        cur_check = false;
+        advance_beat(true, false, &prev_target);
+        last_beat_ms = nxt_beat_ms;
     }
 
     // tiny sleep so we don't busy-loop too hard
@@ -113,6 +152,6 @@ void game_step(void) {
 }
 
 // Optional getter
-int game_get_score(void) {
+int game_get_combo(void) {
     return score;
 }

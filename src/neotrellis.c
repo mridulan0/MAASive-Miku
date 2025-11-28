@@ -153,7 +153,7 @@ int init_neopixels() {
     return 0;
 }
 
-int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) { //edited so its hatsune miku blue
+int set_pixel_color(uint8_t pixel, uint8_t r, uint8_t g, uint8_t b) { 
     if (pixel >= NEO_TRELLIS_NUM_KEYS) return -1;
 
     uint8_t buf[5];

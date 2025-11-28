@@ -12079,13 +12079,18 @@ const uint32_t combo_img_ct = 11;
     \param ten the previous tens value of the combo count
     \param one the previous ones value of the combo count
 */
-void _disp_combo_help(int combo, int* ten, int* one){
+void _disp_combo_help(int combo, int* ten, int* one, bool* combo_disp){
+    if (combo == 0){
+        LCD_DrawFillRectangle(14, 200, 230, 305, 0xC71D);
+        *combo_disp = false;
+    }
     if (combo > 0){
         Picture* combo_img = NULL;
-        if (combo == 1){
+        if (!(*combo_disp)){
             combo_img = load_image(combo_txt[0]);
             _disp_combo(9, 200, combo_img);
             free_image(combo_img);
+            *combo_disp = true;
         }
         if(combo<10){
             combo_img = load_image(combo_txt[combo+1]);

@@ -7,14 +7,17 @@
 #include "minigame.h"
 
 static int score = 0;
+static bool chg = false;
 static uint8_t current_target = 255;   // 0–15 = valid, 255 = no target
 static uint8_t prev_target = 255;
+
+// Condition control variables for gameplay reaction time
 static bool cur_check = false;
 static bool nxt_check = false;
 static uint8_t keyHit = 0;
 
 // BPM control
-static int bpm = 119;                  // change this for speed
+static int bpm = 120;                  // change this for speed
 static uint32_t beat_interval_ms = 0;
 static uint32_t last_beat_ms = 0;
 static uint32_t nxt_beat_ms = 0;
@@ -22,6 +25,9 @@ static uint32_t nxt_beat_ms = 0;
 // Game duration (30 seconds)
 static uint32_t game_duration_ms = 33000;  // 33 s
 static uint32_t game_start_ms = 0;
+
+static uint8_t beats[70] = {0}; 
+static uint8_t cur_idx = 0;
 
 bool valid_hit = false;
 bool miss = false;
@@ -32,6 +38,7 @@ static void advance_beat(bool clear, bool update, uint8_t* target) {
     if(((*target) != 255 || valid_hit) && clear){
          if (!valid_hit) {
             miss = true;
+            chg = true;
             if(prev_target!= current_target)
                 set_pixel_color(*target, 0, 0 ,0);
             *target = 255;
@@ -40,11 +47,13 @@ static void advance_beat(bool clear, bool update, uint8_t* target) {
             valid_hit = false;
             if(prev_target!= current_target)
                 set_pixel_color(keyHit, 0, 0 ,0);
+            chg = false;
          }
     }
 
     if(update){
-        *target = rand() % NEO_TRELLIS_NUM_KEYS;
+        chg = false;
+        *target = beats[cur_idx++];
         printf("New target key index: %u\n", *target);
         // Hatsune Miku blue
         set_pixel_color(*target, 0, 220, 255);
@@ -62,6 +71,7 @@ static TrellisCallback printKey(keyEvent evt) {
 
         if (evt.NUM == current_target || evt.NUM == prev_target) {
             score++;
+            chg = true;
             printf("Correct key! New score = %d\n", score);
 
             // Clear LEDs and wait for next beat
@@ -91,17 +101,25 @@ void game_init(void) {
     printf("Initializing game logic...\n");
     init_keypad(printKey);
 
+    srand(250);
     // Set up beat timing
     beat_interval_ms = 60000 / bpm;
     last_beat_ms = to_ms_since_boot(get_absolute_time());
     game_start_ms = last_beat_ms;
     clear_all_pixels();
 
+    // Avoid overlapping keys (really hard to catch when playing)
+    for(int i = 0; i<70; i++){
+        beats[i] = rand() % NEO_TRELLIS_NUM_KEYS;
+        if(i>0 && beats[i] == beats[i-1])
+            beats[i] = (beats[i] + 1) % NEO_TRELLIS_NUM_KEYS;
+    }
+
     printf("BPM = %d → beat_interval_ms = %u ms\n", bpm, beat_interval_ms);
     printf("Game duration = %u ms (~33 s)\n", game_duration_ms);
 }
 
-//Public: one "step" of the game
+//One "step" of the game
 void game_step(void) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
     if (miss){
@@ -128,16 +146,25 @@ void game_step(void) {
         cur_check = true;
         nxt_check = false;
         prev_target = current_target;
+
+        //only update the beat, don't clear the pixel
         advance_beat(false, true, &current_target);
     }
 
     if (now - last_beat_ms >= beat_interval_ms && !nxt_check){
+        //update next beat time
         nxt_beat_ms = now;
         nxt_check = true;
+
+        //warning color
+        set_pixel_color(prev_target, 100, 0, 0);
+        show_pixels();
     }
 
     if (now - last_beat_ms - 100 >= beat_interval_ms){
         cur_check = false;
+
+        //update reference interval time, clear previous pixel
         advance_beat(true, false, &prev_target);
         last_beat_ms = nxt_beat_ms;
     }
@@ -149,4 +176,7 @@ void game_step(void) {
 // Optional getter
 int game_get_combo(void) {
     return score;
+}
+bool get_chg(void){
+    return chg;
 }

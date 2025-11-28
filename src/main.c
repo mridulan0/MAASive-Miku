@@ -11,13 +11,13 @@
 #include "hardware/pwm.h"
 #include "hardware/dma.h"
 #include "hardware/i2c.h"
-#include "neotrellis.h"
-#include "minigame.h"
-#include "pico/time.h"
-//////////////////////////////////////////////////////////////////////////////
 #include "hardware/adc.h"
 #include "hardware/structs/dma.h"
 #include "hardware/structs/pwm.h"
+
+#include "neotrellis.h"
+#include "minigame.h"
+#include "pico/time.h"
 
 #include "lcd.h"
 #include "images.h"
@@ -30,7 +30,7 @@ bool input = false;
 
 /****************************************** */
 // Comment out this line once the keypad is implemented
-#define PLAY
+// #define PLAY
 /****************************************** */
 #ifdef PLAY
 static void _play_handler(){
@@ -53,13 +53,6 @@ void init_spi_lcd();
 Picture* load_image(const uint8_t* image_data);
 void free_image(Picture* pic);
 
-// Function Declarations
-int determine_gpio_from_channel(int);
-void init_adc(int);
-void init_adc_for_freerun();
-void modify_frequency(int, float);
-void advance_beat(void);
-void fade_pixel_miku(uint8_t pixel, uint32_t duration_ms);
 // song playing functions
 void init_pwm_dma();
 void fill_pwm_buffer();
@@ -77,24 +70,41 @@ extern int dma_chan;
 void core1_main() {
     // initialize lcd screen
     init_spi_lcd();
+    // Initialize I2C
+    init_i2c();
+    sleep_ms(500);
+
     LCD_Setup();
     LCD_Clear(0xC71D); // Clear the screen to black
 
     Picture* frame_pic = NULL;
     int frame_index = 0;
+    bool combo_disp; // check if combo text is displayed
     int combo = 0;
-    bool valid_hit = false;
-    bool miss = false;
     bool chg = false;
     int ten = combo/10;
     int one = combo%10;
 
+    // Initialize NeoPixels
+    if (init_neopixels() < 0) {
+        printf("ERROR: Failed to initialize NeoPixels.\n");
+    }
+
+    // Initialize the game (sets up keypad callback, timers, first target)
+    game_init();
+
+    printf("Game initialized. Entering game loop...\n");
+    
     #ifdef PLAY
         _init_play();
     #endif
 
     while (1) { // Loop forever
         // Get the next frame from the array
+        game_step();
+        combo = game_get_combo();
+
+        chg = get_chg();
         frame_pic = load_image(mystery_frames[frame_index]);
     
         if (frame_pic) {
@@ -111,23 +121,8 @@ void core1_main() {
             frame_index = 0;
         }
 
-        if (input){
-            valid_hit = true;
-            input=false;
-        }
-        // Add combo count to the screen
-        if(valid_hit){
-            combo++;
-            chg = true;
-            valid_hit = false;
-        }
-        if(miss){
-            combo = 0;
-            miss = false;
-        }
         if(chg){
-            _disp_combo_help(combo, &ten, &one);
-            chg = false;
+            _disp_combo_help(combo, &ten, &one, &combo_disp);
         }
         // Add a small delay to control animation speed
         sleep_us(40); // Adjust delay as needed
@@ -138,36 +133,12 @@ void core1_main() {
 
 int main() {
     stdio_init_all();
-
-    // Seed RNG
-    srand(200);
-    
-    // Initialize I2C
-    init_i2c();
-    sleep_ms(500);
-    
-    // Initialize NeoPixels
-    if (init_neopixels() < 0) {
-        printf("ERROR: Failed to initialize NeoPixels.\n");
-        return 1;
-    }
-
-    // Initialize the game (sets up keypad callback, timers, first target)
-    game_init();
-
-    printf("Game initialized. Entering game loop...\n");
-
-    while (true) {
-        game_step();
-        uint8_t combo = game_get_combo();
-    }
-    
-    return 0;
     multicore_launch_core1(core1_main);
 
     // initialize pwm and dma
     init_adc();
     init_pwm_dma();
+    sleep_ms(500);
 
     const uint8_t* wav_ptr = ievan_polkka_cut_wav + 44;
     int total_samples = (ievan_polkka_cut_wav_len - 44) / 2;

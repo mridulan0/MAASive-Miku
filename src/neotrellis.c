@@ -1,3 +1,7 @@
+/* Reference: Adafruit Neotrellis and Seesaw Library source code
+    (Snippets of code from this file are translated from the Adafruit Library source code)
+*/
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"

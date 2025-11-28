@@ -6,8 +6,8 @@
 #include "neotrellis.h"
 #include "minigame.h"
 
-static int score = 0;
-static bool chg = false;
+static int score = 0; // Combo count
+static bool chg = false; // If combo changed
 static uint8_t current_target = 255;   // 0–15 = valid, 255 = no target
 static uint8_t prev_target = 255;
 
@@ -35,6 +35,7 @@ bool miss = false;
 static void advance_beat(bool clear, bool update, uint8_t* target) {
     printf("Advancing beat...\n");
 
+    // If target is valid or a valid hit was registered
     if(((*target) != 255 || valid_hit) && clear){
          if (!valid_hit) {
             miss = true;
@@ -173,10 +174,12 @@ void game_step(void) {
     sleep_ms(1);
 }
 
-// Optional getter
+// Return combo
 int game_get_combo(void) {
     return score;
 }
+
+// If combo changed since last update
 bool get_chg(void){
     return chg;
 }
